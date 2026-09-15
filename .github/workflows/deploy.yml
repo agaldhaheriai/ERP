@@ -42,28 +42,72 @@ jobs:
 
       - name: جلب مصدر الإجازات
         id: leave
+        env:
+          LEAVE_URL: https://fifthday.free.je/leave_api.php
         run: |
-          set +e
-          curl -fsSL --max-time 60 --retry 2 --retry-delay 5 \
-               -A 'ERP-Deploy' \
-               "https://fifthday.free.je/leave_api.php" -o out/data/leave.json
-          rc=$?
-          set -e
-          if [ $rc -ne 0 ]; then
-            echo "::warning::تعذّر جلب مصدر الإجازات (رمز $rc) — سيُرفع الكود وحده وتبقى النسخة السابقة على الخادم"
+          # الاستضافة المجانية ترد على الأدوات الآلية بصفحة تحقّق JavaScript
+          # بدل الـ JSON. نتصرّف كمتصفح، ونحلّ التحقّق إن ظهر.
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+          JAR="$RUNNER_TEMP/jar.txt"
+          RAW="$RUNNER_TEMP/leave.raw"
+
+          cat > "$RUNNER_TEMP/check.py" <<'PYEOF'
+          import json, sys
+          d = json.load(open(sys.argv[1], encoding='utf-8'))
+          rows = d.get('employees') or d.get('data') or d.get('records') or []
+          assert isinstance(rows, list) and rows, 'لا سجلات'
+          seen = {r.get('email') or r.get('full_name') for r in rows if isinstance(r, dict)}
+          print(f"سجلات: {len(rows)} · أشخاص مميّزون: {len(seen)}")
+          PYEOF
+
+          cat > "$RUNNER_TEMP/solve.py" <<'PYEOF'
+          import binascii, re, subprocess, sys
+          html = open(sys.argv[1], 'rb').read().decode('utf-8', 'replace')
+          g = lambda n: (re.search(n + r'=toNumbers\("([0-9a-fA-F]+)"\)', html) or [None, ''])[1]
+          a, b, c = g('a'), g('b'), g('c')
+          if not (a and b and c):
+              sys.exit(1)
+          out = subprocess.run(
+              ['openssl', 'enc', '-d', '-aes-128-cbc', '-K', a, '-iv', b, '-nopad'],
+              input=binascii.unhexlify(c), capture_output=True)
+          sys.stdout.write(out.stdout.hex())
+          PYEOF
+
+          get() {
+            rm -f "$RAW"; : > "$RAW"
+            curl -sSL --max-time 60 --retry 2 --retry-delay 5 \
+                 -A "$UA" \
+                 -H 'Accept: application/json, text/plain, */*' \
+                 -H 'Accept-Language: en-US,en;q=0.9' \
+                 ${1:+-H "$1"} \
+                 -b "$JAR" -c "$JAR" -o "$RAW" -w '%{http_code}' "$LEAVE_URL" || echo 000
+          }
+
+          code=$(get)
+          echo "المحاولة الأولى · HTTP $code · $(wc -c < "$RAW") بايت"
+
+          if ! python3 "$RUNNER_TEMP/check.py" "$RAW" >/dev/null 2>&1; then
+            if grep -q 'toNumbers' "$RAW" 2>/dev/null; then
+              echo "صفحة تحقّق JavaScript — نحلّها ونعيد الطلب"
+              if T=$(python3 "$RUNNER_TEMP/solve.py" "$RAW") && [ -n "$T" ]; then
+                code=$(get "Cookie: __test=$T")
+                echo "بعد التحقّق · HTTP $code · $(wc -c < "$RAW") بايت"
+              fi
+            fi
+          fi
+
+          if python3 "$RUNNER_TEMP/check.py" "$RAW" 2>/dev/null; then
+            cp "$RAW" out/data/leave.json
+            echo "fetched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::مصدر الإجازات لم يُرجِع JSON — يُرفع الكود وتبقى نسخة الإجازات السابقة على الخادم"
+            echo "--- أول ٤٠٠ حرف مما رجع ---"
+            head -c 400 "$RAW" | tr -d '\000'
+            echo ""
+            echo "---------------------------"
             rm -f out/data/leave.json
             echo "fetched=false" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
-          python3 - <<'PY'
-          import json, sys
-          d = json.load(open('out/data/leave.json'))
-          rows = d.get('employees') or d.get('data') or []
-          assert isinstance(rows, list) and rows, 'الملف لا يحوي سجلات'
-          seen = {r.get('email') or r.get('full_name') for r in rows}
-          print(f"سجلات: {len(rows)} · أشخاص مميّزون: {len(seen)}")
-          PY
-          echo "fetched=true" >> "$GITHUB_OUTPUT"
 
       - name: التحقق قبل الرفع
         run: |
