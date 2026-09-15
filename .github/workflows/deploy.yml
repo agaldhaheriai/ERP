@@ -127,29 +127,48 @@ jobs:
           D: ${{ secrets.FTP_DIR }}
         run: |
           if [ -z "$H" ] || [ -z "$U" ] || [ -z "$P" ] || [ -z "$D" ]; then
-            echo "::error::أسرار FTP غير مضبوطة — راجع Settings ← Secrets and variables ← Actions"; exit 1
+            echo "::error::أسرار FTP غير مضبوطة — راجعي Settings ← Secrets and variables ← Actions"
+            exit 1
           fi
+
+          # القيم مخفيّة في السجل، فنفحصها هنا لتعرفي أيّها الخاطئ
+          case "$H" in
+            *://*|*/*|*\ *)
+              echo "::error::FTP_HOST يجب أن يكون اسم خادم فقط — بلا ftp:// وبلا مسار وبلا مسافات"
+              echo "مثال صحيح: ftp.awardspace.net"
+              exit 1 ;;
+          esac
+          if ! getent hosts "$H" > /dev/null 2>&1; then
+            echo "::error::تعذّرت ترجمة FTP_HOST إلى عنوان — القيمة ليست اسم خادم صحيح"
+            echo "انسخي الخادم كما هو مكتوب في: لوحة AwardSpace ← Hosting Tools ← FTP Accounts"
+            exit 1
+          fi
+          echo "FTP_HOST صالح ويُترجم بنجاح"
+          case "$D" in
+            /*) echo "FTP_DIR يبدأ بشرطة مائلة" ;;
+            *)  echo "::warning::FTP_DIR لا يبدأ بـ / — قد يكون هذا سبب فشل المسار" ;;
+          esac
+
           sudo apt-get update -qq && sudo apt-get install -y -qq lftp
-          # كلمة المرور تُمرَّر عبر البيئة لا في سطر الأوامر،
-          # فلا تظهر في قائمة العمليات ولا تنكسر بالرموز الخاصة
+
+          # كلمة المرور عبر البيئة: لا تظهر في قائمة العمليات ولا تنكسر بالرموز الخاصة.
+          # كل أمر على سطر مستقل — lftp يقرأ سطراً سطراً.
           export LFTP_PASSWORD="$P"
-
-          SETTINGS="set ftp:ssl-allow true; set ftp:ssl-force false;
-                    set ssl:verify-certificate no; set net:timeout 20;
-                    set net:max-retries 3; set mirror:parallel-transfer-count 3;"
-          MIRROR="mirror -R --verbose --ignore-time
-                  --exclude-glob config.php --exclude-glob deploy.log
-                  --exclude-glob .deploy-state.json --exclude-glob probe.php
-                  out/ '$D'; bye;"
-
-          # المحاولة الأولى: كلمة المرور من البيئة
-          if lftp -c "$SETTINGS open -u '$U' --env-password '$H'; $MIRROR"; then
-            echo "تم الرفع"
-          else
-            echo "::warning::تعذّرت الطريقة الأولى — إعادة المحاولة بصيغة أخرى"
-            # المحاولة الثانية: لإصدارات lftp التي لا تدعم --env-password
-            lftp -c "$SETTINGS open -u \"\$U\",\"\$LFTP_PASSWORD\" \"\$H\"; $MIRROR"
-          fi
+          lftp <<LFTPEOF
+          set ftp:ssl-allow true
+          set ftp:ssl-force false
+          set ssl:verify-certificate no
+          set net:timeout 20
+          set net:max-retries 2
+          set net:reconnect-interval-base 5
+          set mirror:parallel-transfer-count 3
+          set cmd:fail-exit true
+          open -u "$U" --env-password "$H"
+          pwd
+          mirror -R --verbose --ignore-time --exclude-glob config.php --exclude-glob deploy.log --exclude-glob .deploy-state.json --exclude-glob probe.php --exclude-glob config.sample.php out/ "$D"
+          bye
+          LFTPEOF
+          echo "تم الرفع بنجاح"
 
       - name: الخلاصة
         run: |
