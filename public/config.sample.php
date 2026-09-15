@@ -1,58 +1,71 @@
 <?php
-/* ============================================================================
- *  ERPSYS — البوابة الداخلية
- *  config.php  ·  انسخ هذا الملف باسم config.php على الخادم فقط
- *  ---------------------------------------------------------------------------
- *  ⚠️  config.php مستبعَد من Git (.gitignore) لأنه يحوي كلمات المرور.
- *      لا ترفعه إلى GitHub أبداً. يبقى على الاستضافة وحدها.
- * ==========================================================================*/
+/* ===========================================================================
+ * ERP  |  config.php   —   للخادم فقط، لا يُرفع إلى GitHub
+ * ---------------------------------------------------------------------------
+ * AwardSpace تحجب كل اتصال صادر خارج خادمها، لذلك:
+ *   • مصدرا الأنظمة والأجهزة على الخادم نفسه  →  تُقرأ مباشرة
+ *   • مصدر الإجازات خارجي  →  يجلبه GitHub Actions ويرفعه إلى data/leave.json
+ *   • النشر  →  GitHub Actions يدفع عبر FTP  (deploy.php لم يعد يُستعمل)
+ * ========================================================================= */
+
 return [
 
-    /* ── 1) قاعدة البيانات على AwardSpace ─────────────────────────────────
-     *  القيم من: لوحة AwardSpace ← Hosting Tools ← MySQL Databases
-     */
+    /* -----------------------------------------------------------------
+     * 1) DATABASE  —  AwardSpace MySQL
+     * -----------------------------------------------------------------
+     * قاعدة البيانات
+     * ----------------------------------------------------------------- */
     'db' => [
         'enabled' => true,
         'host'    => 'fdb1028.awardspace.net',
         'port'    => 3306,
         'name'    => '4786925_howiyati',
         'user'    => '4786925_howiyati',
-        'pass'    => 'ضع-كلمة-المرور-هنا',
+        'pass'    => 'CHANGE_ME_db_password',
         'charset' => 'utf8mb4',
         'prefix'  => 'portal_',
     ],
 
-    /* ── 2) مصادر البيانات (ملفات JSON) ───────────────────────────────── */
+    /* -----------------------------------------------------------------
+     * 2) DATA SOURCES
+     *    apps / hardware : same server, reachable
+     *    leave           : local copy, refreshed hourly by GitHub Actions
+     * -----------------------------------------------------------------
+     * مصادر البيانات
+     * الأنظمة والأجهزة على الخادم نفسه فتُقرأ مباشرة
+     * والإجازات نسخة محلية يحدّثها GitHub كل ساعة
+     * ----------------------------------------------------------------- */
     'endpoints' => [
         'apps'     => 'http://amnaai.atwebpages.com/AppsManagement/api/api_applications.json',
-        'leave'    => 'https://fifthday.free.je/leave_api.php',
         'hardware' => 'http://aldhaheri1907.atwebpages.com/Hardware/export_json.php',
+        'leave'    => 'http://amnaai.atwebpages.com/ERP/data/leave.json',
     ],
 
+    /* -----------------------------------------------------------------
+     * 3) GENERAL
+     * -----------------------------------------------------------------
+     * رمز المزامنة يُطلب عند إنشاء الجداول وعند المزامنة
+     * ----------------------------------------------------------------- */
     'api_headers'     => [],
     'cache_ttl'       => 90,
-    'sync_token'      => 'ضع-رمزاً-سرياً-طويلاً-هنا',
+    'sync_token'      => 'CHANGE_ME_sync_token',
     'default_user'    => 'amna.aldhaheri',
     'store_snapshots' => true,
 
-    /* ── 3) الوصلة مع GitHub (يستخدمها deploy.php) ────────────────────────
-     *  owner/repo  = اسم حسابك واسم المستودع على GitHub
-     *  branch      = الفرع الذي يُنشر منه
-     *  source_dir  = المجلد داخل المستودع الذي يُنسخ إلى /ERP/  (erp-portal/public)
-     *  deploy_token= رمز سرّي تكتبه أنت — يُطلب عند النشر اليدوي
-     *  webhook_secret = نفس القيمة التي تضعها في إعدادات Webhook على GitHub
-     *  github_token= اتركه فارغاً للمستودعات العامة.
-     *                للمستودع الخاص: Personal Access Token بصلاحية "Contents: read"
-     *  protect     = ملفات لا يمسّها النشر أبداً (إعداداتك وسجلاتك)
-     *                .htaccess ليس منها — فهو في المستودع ويُحدَّث مع الكود.
-     */
+    /* -----------------------------------------------------------------
+     * 4) GITHUB  —  kept for reference only
+     *    deploy.php cannot reach GitHub from this host.
+     *    Deployment now runs from GitHub Actions over FTP.
+     * -----------------------------------------------------------------
+     * هذا القسم للتوثيق فقط، النشر صار من GitHub Actions عبر FTP
+     * ----------------------------------------------------------------- */
     'github' => [
         'owner'          => 'agaldhaheriai',
-        'repo'           => 'ERPSYS',
+        'repo'           => 'ERP',
         'branch'         => 'main',
-        'source_dir'     => 'erp-portal/public',
-        'deploy_token'   => 'ضع-رمز-نشر-سرياً-هنا',
-        'webhook_secret' => 'ضع-سر-الويبهوك-هنا',
+        'source_dir'     => 'public',
+        'deploy_token'   => 'CHANGE_ME_deploy_token',
+        'webhook_secret' => '',
         'github_token'   => '',
         'protect'        => ['config.php', '.deploy-state.json', 'deploy.log'],
     ],
