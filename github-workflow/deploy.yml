@@ -1,0 +1,31 @@
+# ════════════════════════════════════════════════════════════════════════
+#  ERPSYS — نشر تلقائي إلى AwardSpace بعد كل push على main
+#  ------------------------------------------------------------------------
+#  هذا بديل للويبهوك. إن فعّلت الويبهوك من إعدادات المستودع فلا تحتاجه.
+#
+#  قبل التفعيل أضف هذين السرّين في:
+#    Settings ← Secrets and variables ← Actions ← New repository secret
+#      DEPLOY_URL    = https://amnaai.atwebpages.com/ERP/deploy.php
+#      DEPLOY_TOKEN  = نفس قيمة github.deploy_token في config.php
+# ════════════════════════════════════════════════════════════════════════
+name: Deploy to AwardSpace
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:          # زر تشغيل يدوي من تبويب Actions
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: استدعاء وصلة النشر على الاستضافة
+        run: |
+          echo "نشر ${GITHUB_SHA::7} …"
+          code=$(curl -sS -o response.json -w '%{http_code}' --max-time 300 \
+            "${{ secrets.DEPLOY_URL }}?action=deploy&force=1&token=${{ secrets.DEPLOY_TOKEN }}")
+          echo "HTTP $code"
+          cat response.json
+          echo
+          test "$code" = "200" || { echo "::error::فشل النشر"; exit 1; }
+          grep -q '"ok": true' response.json || { echo "::error::الاستضافة ردّت بخطأ"; exit 1; }
